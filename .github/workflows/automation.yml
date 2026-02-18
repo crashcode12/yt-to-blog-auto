@@ -1,24 +1,29 @@
-import os
-import google.generativeai as genai
-import requests
+name: YT to Blog Bot
 
-# טעינת הגדרות
-genai.configure(api_key=os.environ["GEMINI_API_KEY"])
-model = genai.GenerativeModel('gemini-1.5-flash')
+on:
+  schedule:
+    - cron: '0 */6 * * *'
+  workflow_dispatch:
 
-def test_setup():
-    print("--- בודק חיבור ל-Gemini ---")
-    response = model.generate_content("תגיד 'מערכת מוכנה לעבודה' בעברית")
-    print(f"Gemini אומר: {response.text}")
+jobs:
+  run-logic:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
 
-    print("\n--- בודק חיבור לאתר ---")
-    site_url = os.environ["SITE_URL"]
-    # בדיקה שהאתר מגיב
-    res = requests.get(f"{site_url}/wp-json/")
-    if res.status_code == 200:
-        print(f"האתר {site_url} מגיב מצוין!")
-    else:
-        print(f"שגיאה בחיבור לאתר: {res.status_code}")
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
 
-if __name__ == "__main__":
-    test_setup()
+      - name: Install Libraries
+        run: pip install -r requirements.txt
+
+      - name: Execute Bot
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          SITE_URL: ${{ secrets.SITE_URL }}
+          SITE_USERNAME: ${{ secrets.SITE_USERNAME }}
+          SITE_PASSWORD: ${{ secrets.SITE_PASSWORD }}
+        run: python main.py
