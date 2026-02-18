@@ -21,15 +21,19 @@ def mark_as_processed(video_id):
 
 def get_channel_feed(channel_id):
     url = f"https://www.youtube.com/feeds/videos.xml?channel_id={channel_id}"
-    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"}
     try:
         response = requests.get(url, headers=headers, timeout=10)
-        return feedparser.parse(response.content) if response.status_code == 200 else None
-    except:
+        if response.status_code == 200:
+            return feedparser.parse(response.content)
+        else:
+            print(f"שגיאת רשת ממשיכת RSS: קוד {response.status_code}", flush=True)
+            return None
+    except Exception as e:
+        print(f"שגיאת חיבור ל-RSS: {e}", flush=True)
         return None
 
 def get_smart_transcript(video_id):
-    """מנסה למשוך תמלול. יחזיר None אם יוטיוב חוסם את הבוט."""
     try:
         transcript_list = YouTubeTranscriptApi.list_transcripts(video_id)
         for transcript in transcript_list:
@@ -41,12 +45,7 @@ def get_smart_transcript(video_id):
         return None
 
 def process_with_gemini(title, description, text, url):
-    """
-    כאן הקסם קורה: ג'מיני מקבל גם את התמלול וגם את התקציר מה-RSS.
-    אם אין תמלול, הוא ישתמש בתקציר כדי לכתוב ידיעה קצרה.
-    """
-    print("מעביר ל-Gemini נתונים לעיבוד...")
-    
+    print("מעביר ל-Gemini נתונים לעיבוד...", flush=True)
     transcript_status = text if text else "התמלול המלא לא זמין עקב חסימת רשת, הסתמך על התיאור בלבד."
     
     prompt = f"""
@@ -65,7 +64,7 @@ def process_with_gemini(title, description, text, url):
         response = client.models.generate_content(model="gemini-2.0-flash", contents=prompt)
         return response.text
     except Exception as e:
-        print(f"שגיאה ב-AI: {e}")
+        print(f"שגיאה ב-AI: {e}", flush=True)
         return None
 
 def post_to_site(title, content):
@@ -75,46 +74,61 @@ def post_to_site(title, content):
     try:
         res = requests.post(api_url, json=data, auth=auth)
         return res.status_code
-    except:
+    except Exception as e:
+        print(f"שגיאת תקשורת עם האתר: {e}", flush=True)
         return 500
 
 if __name__ == "__main__":
-    print("--- מתחיל ריצה אוטומטית (עם מנגנון גיבוי תיאור) ---")
+    print("--- מתחיל ריצה אוטומטית (עם מנגנון גיבוי תיאור) ---", flush=True)
+    
     processed = get_processed_videos()
+    print(f"יש {len(processed)} סרטונים בזיכרון שטופלו בעבר.", flush=True)
     
     for channel_id in CHANNELS:
+        print(f"ניגש למשוך RSS לערוץ: {channel_id}", flush=True)
         feed = get_channel_feed(channel_id)
-        if not feed or not feed.entries:
+        
+        if not feed:
+            print("הפיד חזר ריק או שגיאת חיבור (יוטיוב חסם זמנית את ה-RSS).", flush=True)
             continue
             
+        if not feed.entries:
+            print("הפיד תקין אך לא נמצאו בו סרטונים כלל.", flush=True)
+            continue
+            
+        print(f"נמצאו {len(feed.entries)} סרטונים בפיד. מתחיל סריקה...", flush=True)
+        
+        video_processed_in_this_run = False
+        
         for entry in feed.entries:
             v_id = entry.yt_videoid
             
             if v_id in processed:
+                print(f"מדלג על הסרטון '{entry.title}' - כבר טופל בעבר.", flush=True)
                 continue
                 
-            print(f"\nבודק סרטון חדש: {entry.title}")
-            
-            # שולפים את התיאור המקורי מה-RSS!
+            print(f"\n>> מתחיל עבודה על סרטון חדש: {entry.title}", flush=True)
             description = entry.summary if 'summary' in entry else "אין תיאור"
             
-            # מנסים למשוך תמלול (אולי נצליח, אולי ניחסם)
             text = get_smart_transcript(v_id)
             if text:
-                print("התמלול נמשך בהצלחה! מכין כתבת עומק.")
+                print("התמלול נמשך בהצלחה! מכין כתבת עומק.", flush=True)
             else:
-                print("התמלול נחסם על ידי יוטיוב. משתמש בתיאור הסרטון כגיבוי להכנת מבזק קצר.")
+                print("התמלול נחסם. משתמש בתיאור הסרטון למבזק קצר.", flush=True)
             
-            # תמיד מייצרים כתבה!
             article = process_with_gemini(entry.title, description, text, entry.link)
             
             if article:
                 status = post_to_site(entry.title, article)
                 if status in [200, 201]:
-                    print(f"הפוסט עלה לאתר! סטטוס: {status}")
+                    print(f"הפוסט עלה לאתר! (קוד: {status})", flush=True)
                     mark_as_processed(v_id)
-                    break 
+                    video_processed_in_this_run = True
+                    break # יוצא מהלופ כדי לא לפרסם יותר מפוסט אחד בכל ריצה
                 else:
-                    print(f"שגיאה בפרסום לאתר: {status}")
+                    print(f"שגיאה בפרסום לאתר: {status}", flush=True)
             else:
-                print("שגיאה ביצירת התוכן מ-Gemini.")
+                print("שגיאה ביצירת התוכן מ-Gemini.", flush=True)
+                
+        if not video_processed_in_this_run:
+            print("סיום: לא היו סרטונים חדשים לטפל בהם.", flush=True)
