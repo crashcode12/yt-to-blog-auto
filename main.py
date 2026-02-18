@@ -1,37 +1,31 @@
 import os
 import requests
-import feedparser
-# ייבוא נקי וישיר בראש הקובץ למניעת שגיאת ה-AttributeError
-from youtube_transcript_api import YouTubeTranscriptApi 
+from youtube_transcript_api import YouTubeTranscriptApi
 from google import genai
 
 # הגדרת ה-Client של Gemini 2.0 Flash
 client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
 
-# ערוץ GoldCore TV
-CHANNELS = ["UCFddgboLcMQ4IUE681qvcqg"] 
-
-def get_channel_feed(channel_id):
-    url = f"https://www.youtube.com/feeds/videos.xml?channel_id={channel_id}"
-    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"}
-    try:
-        response = requests.get(url, headers=headers, timeout=10)
-        return feedparser.parse(response.content) if response.status_code == 200 else None
-    except:
-        return None
+# נתוני סרטון ספציפי לבדיקה (COMEX Silver Delivery Shock)
+TEST_VIDEO_ID = "6vOKEkg7Uyg"
+TEST_VIDEO_TITLE = "COMEX Silver Delivery Shock: What Happens in March?"
+TEST_VIDEO_URL = f"https://www.youtube.com/watch?v={TEST_VIDEO_ID}"
 
 def get_transcript(video_id):
-    """משיכת התמלול בצורה הכי ישירה וסטנדרטית של הספרייה"""
+    """משיכת תמלול ישירה"""
+    print(f"מנסה למשוך תמלול לסרטון: {video_id}...")
     try:
-        # קריאה ישירה לפונקציה
         transcript_list = YouTubeTranscriptApi.get_transcript(video_id, languages=['he', 'en'])
-        return " ".join([t['text'] for t in transcript_list])
+        text = " ".join([t['text'] for t in transcript_list])
+        print("התמלול נמשך בהצלחה!")
+        return text
     except Exception as e:
-        print(f"שגיאה במשיכת תמלול לסרטון {video_id}: {e}")
+        print(f"שגיאה במשיכת תמלול: {e}")
         return None
 
 def process_with_gemini(title, text, url):
-    """הפיכת התמלול לכתבה מקצועית בעברית"""
+    """כתיבת הכתבה בעברית"""
+    print("מעביר ל-Gemini לכתיבת הכתבה...")
     prompt = f"כתוב כתבה כלכלית מקצועית בעברית עבור אתר 'Coinfolio' על בסיס התוכן הבא: {title}. תמלול: {text}. בסוף הוסף מקור: {url}"
     try:
         response = client.models.generate_content(
@@ -44,33 +38,36 @@ def process_with_gemini(title, text, url):
         return None
 
 def post_to_site(title, content):
-    """פרסום לוורדפרס"""
+    """פרסום לאתר וורדפרס"""
+    print("מנסה לפרסם לאתר...")
     api_url = f"{os.environ['SITE_URL']}/wp-json/wp/v2/posts"
     auth = (os.environ['SITE_USERNAME'], os.environ['SITE_PASSWORD'])
     data = {"title": title, "content": content, "status": "publish"}
     try:
         res = requests.post(api_url, json=data, auth=auth)
         return res.status_code
-    except:
+    except Exception as e:
+        print(f"שגיאה בחיבור לאתר: {e}")
         return 500
 
 if __name__ == "__main__":
-    for channel_id in CHANNELS:
-        feed = get_channel_feed(channel_id)
+    print("--- מתחיל בדיקת מעבדה: הזרקת סרטון ישירה ---")
+    
+    # שלב 1: תמלול
+    text = get_transcript(TEST_VIDEO_ID)
+    
+    if text:
+        # שלב 2: כתיבת כתבה
+        article = process_with_gemini(TEST_VIDEO_TITLE, text, TEST_VIDEO_URL)
         
-        # מוודא שיש לפחות 2 סרטונים בפיד כדי שנוכל לקחת את השני
-        if feed and len(feed.entries) > 1:
-            # שינוי קריטי לבקשתך: שינינו מ-[0] ל-[1] כדי לבדוק סרטון אחר
-            entry = feed.entries[1] 
-            print(f"מנסה סרטון חלופי: {entry.title}. מעבד...")
-            
-            text = get_transcript(entry.yt_videoid)
-            if text:
-                article = process_with_gemini(entry.title, text, entry.link)
-                if article:
-                    status = post_to_site(entry.title, article)
-                    print(f"הסרטון פורסם בהצלחה! סטטוס באתר: {status}")
+        if article:
+            # שלב 3: פרסום
+            status = post_to_site(TEST_VIDEO_TITLE, article)
+            if status in [200, 201]:
+                print(f"הצלחה מסחררת! הכתבה פורסמה. סטטוס: {status}")
             else:
-                print("הבדיקה נכשלה: עדיין לא נמצא תמלול או שהשגיאה חזרה.")
+                print(f"הכתבה נכתבה אבל האתר החזיר שגיאה: {status}")
         else:
-            print("לא נמצאו מספיק סרטונים בפיד.")
+            print("הבדיקה נכשלה בשלב ה-AI.")
+    else:
+        print("הבדיקה נכשלה בשלב התמלול. וודא שספריית התמלול מותקנת היטב.")
