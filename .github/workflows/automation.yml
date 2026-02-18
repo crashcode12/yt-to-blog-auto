@@ -1,25 +1,20 @@
 name: YT to Blog Bot
-
 on:
   schedule:
     - cron: '0 */6 * * *'
   workflow_dispatch:
-
 jobs:
   run-logic:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
         uses: actions/checkout@v3
-
       - name: Setup Python
         uses: actions/setup-python@v4
         with:
           python-version: '3.9'
-
       - name: Install Libraries
         run: pip install -r requirements.txt
-
       - name: Execute Bot
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
