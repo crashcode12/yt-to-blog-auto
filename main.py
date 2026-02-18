@@ -1,10 +1,10 @@
 import os
 import requests
 import feedparser
-from youtube_transcript_api import YouTubeTranscriptApi # ייבוא ישיר ומתוקן
+from youtube_transcript_api import YouTubeTranscriptApi as YT_API # ייבוא עם שם ייחודי למניעת התנגשויות
 from google import genai
 
-# הגדרת ה-Client החדש של Gemini (לפי המלצת הלוגים שלך)
+# הגדרת ה-Client של Gemini 2.0 Flash
 client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
 
 # ערוץ GoldCore TV
@@ -20,27 +20,31 @@ def get_channel_feed(channel_id):
         return None
 
 def get_transcript(video_id):
-    """
-    מנסה למשוך תמלול. 
-    אם הסרטון באנגלית, ה-AI יתרגם אותו לעברית בשלב הבא.
-    """
+    """שיטה חסינה יותר למשיכת תמלול שתפתור את ה-AttributeError"""
     try:
-        # כאן התיקון המרכזי - קריאה ישירה למחלקה
-        transcript_list = YouTubeTranscriptApi.get_transcript(video_id, languages=['he', 'en'])
-        return " ".join([t['text'] for t in transcript_list])
+        # 1. קבלת רשימת כל הכתוביות הזמינות
+        transcript_list = YT_API.list_transcripts(video_id)
+        
+        # 2. ניסיון למצוא עברית, ואם אין - אנגלית
+        # זה עוקף את הבעיה שראינו בלוגים
+        transcript = transcript_list.find_transcript(['he', 'en'])
+        
+        # 3. משיכת הטקסט בפועל
+        data = transcript.fetch()
+        return " ".join([t['text'] for t in data])
     except Exception as e:
-        print(f"שגיאה במשיכת תמלול: {e}")
+        print(f"שגיאה במשיכת תמלול לסרטון {video_id}: {e}")
         return None
 
 def process_with_gemini(title, text, url):
-    """מעבד כל תמלול (גם אנגלי) לכתבה איכותית בעברית"""
+    """עיבוד התוכן לכתבה מקצועית בעברית"""
     prompt = f"""
     אתה עיתונאי כלכלי באתר 'Coinfolio'. 
-    משימה: תרגם ועבד את התוכן הבא לכתבה עיתונאית מעניינת בעברית.
+    משימה: תרגם ועבד את התוכן הבא לכתבה עיתונאית מרתקת בעברית.
     כותרת הסרטון: {title}
     מקור (להוספה בסוף): {url}
     
-    התמלול (עשוי להיות באנגלית):
+    התמלול:
     {text}
     """
     try:
@@ -50,7 +54,7 @@ def process_with_gemini(title, text, url):
         )
         return response.text
     except Exception as e:
-        print(f"שגיאה ב-AI: {e}")
+        print(f"שגיאה ב-Gemini: {e}")
         return None
 
 def post_to_site(title, content):
@@ -64,14 +68,14 @@ if __name__ == "__main__":
     for channel_id in CHANNELS:
         feed = get_channel_feed(channel_id)
         if feed and feed.entries:
-            entry = feed.entries[0] # סרטון בדיקה בודד
+            entry = feed.entries[0] # בדיקה על סרטון בודד
             print(f"נמצא סרטון: {entry.title}. מעבד...")
             
-            transcript = get_transcript(entry.yt_videoid)
-            if transcript:
-                article = process_with_gemini(entry.title, transcript, entry.link)
+            transcript_text = get_transcript(entry.yt_videoid)
+            if transcript_text:
+                article = process_with_gemini(entry.title, transcript_text, entry.link)
                 if article:
                     status = post_to_site(entry.title, article)
-                    print(f"סטטוס פרסום באתר: {status}")
+                    print(f"הסרטון פורסם בהצלחה! סטטוס באתר: {status}")
             else:
-                print("לא נמצא תמלול לסרטון. וודא שיש כתוביות (CC) ביוטיוב.")
+                print("הבדיקה נכשלה: לא הצלחנו למשוך את הטקסט מהכתוביות.")
