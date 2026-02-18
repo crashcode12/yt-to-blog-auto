@@ -6,15 +6,20 @@ on:
 jobs:
   run-logic:
     runs-on: ubuntu-latest
+    permissions: # מוודא שלמכונה יש הרשאת כתיבה לקוד
+      contents: write
     steps:
       - name: Checkout Code
         uses: actions/checkout@v3
+
       - name: Setup Python
         uses: actions/setup-python@v4
         with:
           python-version: '3.9'
+
       - name: Install Libraries
         run: pip install -r requirements.txt
+
       - name: Execute Bot
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
@@ -22,3 +27,11 @@ jobs:
           SITE_USERNAME: ${{ secrets.SITE_USERNAME }}
           SITE_PASSWORD: ${{ secrets.SITE_PASSWORD }}
         run: python main.py
+
+      - name: Commit and Push changes # שלב הזיכרון
+        run: |
+          git config --global user.name "GitHub Action Bot"
+          git config --global user.email "actions@github.com"
+          git add processed_videos.txt
+          git commit -m "Update processed videos list" || exit 0
+          git push
