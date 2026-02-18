@@ -1,7 +1,8 @@
 import os
 import requests
 import feedparser
-import youtube_transcript_api
+# ייבוא נקי וישיר בראש הקובץ למניעת שגיאת ה-AttributeError
+from youtube_transcript_api import YouTubeTranscriptApi 
 from google import genai
 
 # הגדרת ה-Client של Gemini 2.0 Flash
@@ -20,11 +21,9 @@ def get_channel_feed(channel_id):
         return None
 
 def get_transcript(video_id):
-    """שיטה עוקפת-שגיאות למשיכת תמלול"""
+    """משיכת התמלול בצורה הכי ישירה וסטנדרטית של הספרייה"""
     try:
-        # כאן התיקון הקריטי למניעת ה-AttributeError:
-        # אנחנו ניגשים ישירות למחלקה דרך המודול שייבאנו
-        from youtube_transcript_api import YouTubeTranscriptApi
+        # קריאה ישירה לפונקציה
         transcript_list = YouTubeTranscriptApi.get_transcript(video_id, languages=['he', 'en'])
         return " ".join([t['text'] for t in transcript_list])
     except Exception as e:
@@ -58,9 +57,12 @@ def post_to_site(title, content):
 if __name__ == "__main__":
     for channel_id in CHANNELS:
         feed = get_channel_feed(channel_id)
-        if feed and feed.entries:
-            entry = feed.entries[0] # מעבד רק את הסרטון הכי חדש לבדיקה
-            print(f"נמצא סרטון: {entry.title}. מעבד...")
+        
+        # מוודא שיש לפחות 2 סרטונים בפיד כדי שנוכל לקחת את השני
+        if feed and len(feed.entries) > 1:
+            # שינוי קריטי לבקשתך: שינינו מ-[0] ל-[1] כדי לבדוק סרטון אחר
+            entry = feed.entries[1] 
+            print(f"מנסה סרטון חלופי: {entry.title}. מעבד...")
             
             text = get_transcript(entry.yt_videoid)
             if text:
@@ -69,4 +71,6 @@ if __name__ == "__main__":
                     status = post_to_site(entry.title, article)
                     print(f"הסרטון פורסם בהצלחה! סטטוס באתר: {status}")
             else:
-                print("הבדיקה נכשלה: לא נמצא תמלול. וודא שהסרטון ביוטיוב תומך ב-CC.")
+                print("הבדיקה נכשלה: עדיין לא נמצא תמלול או שהשגיאה חזרה.")
+        else:
+            print("לא נמצאו מספיק סרטונים בפיד.")
