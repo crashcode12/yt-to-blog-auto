@@ -4,7 +4,7 @@ import requests
 
 # טעינת הגדרות
 genai.configure(api_key=os.environ["GEMINI_API_KEY"])
-model = genai.GenerativeModel('gemini-1.5-flash')
+model = genai.GenerativeModel('gemini-2.0-flash')
 
 def test_setup():
     print("--- בודק חיבור ל-Gemini ---")
