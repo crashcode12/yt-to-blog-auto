@@ -1,69 +1,37 @@
 import os
-import re
-import yt_dlp
 import requests
 from google import genai
+from youtube_transcript_api import YouTubeTranscriptApi
 
 # הגדרת ה-Client של Gemini
 client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
 
-# סרטון הבדיקה שלנו (COMEX Silver Delivery Shock)
+# סרטון הבדיקה (COMEX Silver)
 TEST_VIDEO_ID = "6vOKEkg7Uyg"
-TEST_VIDEO_TITLE = "COMEX Silver Delivery Shock: What Happens in March?"
+TEST_VIDEO_TITLE = "COMEX Silver Delivery Shock"
 TEST_VIDEO_URL = f"https://www.youtube.com/watch?v={TEST_VIDEO_ID}"
 
-def download_transcript(video_url):
-    print("מפעיל את yt-dlp לשאיבת קובץ הכתוביות המקורי...")
-    
-    ydl_opts = {
-        'skip_download': True, # אנחנו לא רוצים את הווידאו, רק את הטקסט
-        'writesubtitles': True,
-        'writeautomaticsub': True,
-        'subtitleslangs': ['en'], # מבקש את הכתוביות באנגלית
-        'subtitlesformat': 'vtt',
-        'outtmpl': 'subtitle_%(id)s.%(ext)s',
-        'quiet': True,
-        'no_warnings': True
-    }
-    
+def get_transcript(video_id):
+    print("--- מתחיל משיכת תמלול ---")
     try:
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            ydl.download([video_url])
+        # פקודת רנטגן: מדפיס את כל הפונקציות שהספרייה מכירה
+        print("DEBUG - פונקציות זמינות בספרייה:", dir(YouTubeTranscriptApi))
         
-        # חיפוש קובץ הכתוביות שירד לשרת
-        for file in os.listdir('.'):
-            if file.startswith('subtitle_') and file.endswith('.vtt'):
-                print("קובץ כתוביות ירד בהצלחה. מנקה את הטקסט...")
-                with open(file, 'r', encoding='utf-8') as f:
-                    content = f.read()
-                
-                os.remove(file) # מחיקת הקובץ כדי לשמור על סדר
-                
-                # ניקוי הקובץ מזמנים ותגיות (משאיר רק את המילים באנגלית)
-                text = re.sub(r'<[^>]+>', '', content)
-                clean_lines = []
-                for line in text.split('\n'):
-                    if '-->' in line or line.strip().isdigit() or 'WEBVTT' in line or 'Kind:' in line or 'Language:' in line:
-                        continue
-                    if line.strip():
-                        clean_lines.append(line.strip())
-                
-                # הסרת שורות כפולות (אופייני לכתוביות אוטומטיות)
-                final_text = []
-                for i, line in enumerate(clean_lines):
-                    if i == 0 or line != clean_lines[i-1]:
-                        final_text.append(line)
-                
-                return " ".join(final_text)
-                
-        print("לא נמצא קובץ כתוביות לאחר ההורדה.")
-        return None
+        # שימוש בשיטה המודרנית של הספרייה
+        transcript_list = YouTubeTranscriptApi.list_transcripts(video_id)
+        transcript = transcript_list.find_transcript(['en', 'he'])
+        data = transcript.fetch()
+        
+        text = " ".join([t['text'] for t in data])
+        print(f"התמלול נמשך בהצלחה! ({len(text)} תווים קראו)")
+        return text
+        
     except Exception as e:
-        print(f"שגיאה ב-yt-dlp: {e}")
+        print(f"שגיאה מסוג {type(e).__name__}: {e}")
         return None
 
 def process_with_gemini(title, text, url):
-    print("הטקסט נמשך בהצלחה! מעביר ל-Gemini לתרגום וכתיבה...")
+    print("מעביר ל-Gemini לכתיבת הכתבה...")
     prompt = f"כתוב כתבה כלכלית מקצועית בעברית עבור אתר 'Coinfolio' על בסיס התוכן הבא: {title}. תמלול: {text}. בסוף הוסף מקור: {url}"
     try:
         response = client.models.generate_content(
@@ -88,9 +56,9 @@ def post_to_site(title, content):
         return 500
 
 if __name__ == "__main__":
-    print("--- מתחיל בדיקה עם מנוע yt-dlp ---")
+    print("--- מתחיל בדיקת מעבדה: ספרייה רשמית עם קיבוע גרסה ---")
     
-    text = download_transcript(TEST_VIDEO_URL)
+    text = get_transcript(TEST_VIDEO_ID)
     
     if text:
         article = process_with_gemini(TEST_VIDEO_TITLE, text, TEST_VIDEO_URL)
